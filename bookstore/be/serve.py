@@ -10,6 +10,13 @@ from be.model.store import init_database
 
 bp_shutdown = Blueprint("shutdown", __name__)
 
+config = {
+    "host": "127.0.0.1",
+    "port": 5432,
+    "user": "bookstore",
+    "pwd": "bookstore",
+    "db": "bookstore",
+}
 
 def shutdown_server():
     func = request.environ.get("werkzeug.server.shutdown")
@@ -28,7 +35,7 @@ def be_run():
     this_path = os.path.dirname(__file__)
     parent_path = os.path.dirname(this_path)
     log_file = os.path.join(parent_path, "app.log")
-    init_database(parent_path)
+    init_database(config)
 
     logging.basicConfig(filename=log_file, level=logging.ERROR)
     handler = logging.StreamHandler()

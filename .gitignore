@@ -1,3 +1,5 @@
 
 bookstore/fe/data/book_lx.db
 bookstore/.idea
+*.pyc
+app.log
