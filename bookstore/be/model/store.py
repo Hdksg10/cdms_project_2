@@ -55,6 +55,7 @@ class Store:
                     store_id TEXT,
                     order_time TIMESTAMP,
                     state TEXT,
+                    total_price INTEGER,
                     FOREIGN KEY (user_id) REFERENCES users(user_id),
                     FOREIGN KEY (store_id) REFERENCES stores(store_id)
                 );
@@ -68,7 +69,6 @@ class Store:
                     book_id TEXT,
                     amount INTEGER,
                     price INTEGER,
-                    FOREIGN KEY (order_id) REFERENCES orders(order_id),
                     CONSTRAINT order_detail UNIQUE (order_id, book_id)  
                 );
                 """
@@ -82,6 +82,7 @@ class Store:
                     store_id TEXT,
                     order_time TIMESTAMP,
                     state TEXT,
+                    total_price INTEGER,
                     FOREIGN KEY (user_id) REFERENCES users(user_id),
                     FOREIGN KEY (store_id) REFERENCES stores(store_id)
                 );

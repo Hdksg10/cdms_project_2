@@ -20,7 +20,7 @@ class TestConfirm:
         assert ok
         status_code, self.order_id = self.buyer.new_order(self.store_id, buy_book_list)
         assert status_code == 200
-        code = self.buyer.add_funds(100000000000)
+        code = self.buyer.add_funds(2147483647)
         assert code == 200
         code = self.buyer.payment(self.order_id)
         assert code == 200

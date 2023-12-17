@@ -26,3 +26,9 @@ class DBConn:
             "SELECT store_id FROM stores WHERE store_id = %s;", (store_id,)
         )
         return self.cur.rowcount != 0
+    
+    def order_id_exist(self, order_id):
+        self.cur.execute(
+            "SELECT order_id FROM orders WHERE order_id = %s;", (order_id,)
+        )
+        return self.cur.rowcount != 0
