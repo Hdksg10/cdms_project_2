@@ -97,7 +97,7 @@ class Store:
         # init mongodb database
         collections = ["books"]
         indexs = {
-            "books": [['store_id', 'book_id']],
+            "books": [['store_id', 'book_id'], [('content', "text")]],
         }
         client = self.get_mongo_conn()
         db = client[self.mongo]     

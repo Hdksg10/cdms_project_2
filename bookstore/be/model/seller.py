@@ -3,6 +3,7 @@ from be.model import error
 from be.model import db_conn
 import psycopg2
 import json
+import jieba
 
 class Seller(db_conn.DBConn):
     def __init__(self):
@@ -24,6 +25,9 @@ class Seller(db_conn.DBConn):
             if self.book_id_exist(store_id, book_id):
                 return error.error_exist_book_id(book_id)
             book_json = json.loads(book_json_str)
+            content = book_json.get('content', " ")
+            content_words = jieba.lcut_for_search(content)
+            content_segmented = " ".join(content_words)
             price = book_json.get('price', -1)
             self.cur.execute(
                 "INSERT into stores_stocks(store_id, book_id, price, stock_level)"
@@ -36,6 +40,7 @@ class Seller(db_conn.DBConn):
             book_collection = self.mongo["books"]
             book_json["store_id"] = store_id
             book_json["book_id"] = book_id
+            book_json["content_seg"] = content_segmented
             book_collection.insert_one(book_json)
         except psycopg2.Error as e:
             return 528, "{}".format(str(e))

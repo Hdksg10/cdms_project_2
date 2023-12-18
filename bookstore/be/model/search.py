@@ -9,7 +9,7 @@ class Search(db_conn.DBConn):
         
     def search(self, parameters, page, result_per_page):
         try:
-            store_collection = self.db["store"]
+            book_collection = self.mongo["books"]
             # parse parameters
             store_id = parameters.get("scope", None)
             title = parameters.get("title", None)
@@ -19,8 +19,7 @@ class Search(db_conn.DBConn):
             condition_list = []
             if store_id is not None:
                 if not self.store_id_exist(store_id):
-                    error_msg = error.error_non_exist_store_id(store_id) 
-                    return error_msg[0], error_msg[1], []
+                    return *error.error_non_exist_store_id(store_id), [] 
                 condition_list.append({"store_id": store_id})
             if title is not None:
                 condition_list.append({"title": re.compile(title)})
@@ -29,12 +28,15 @@ class Search(db_conn.DBConn):
             if content is not None:
                 condition_list.append({"$text": {"$search": content}})
             if len(condition_list) == 0:
-                return error.error_empty_search_parameters()
+                return *error.error_empty_search_parameters(), []
             query = {"$and": condition_list}
-            results = list(store_collection.find(query, {"_id": 0, "owner": 0, "content_seg": 0}).skip((page - 1) * result_per_page).limit(result_per_page))
+            results = list(book_collection.find(query, {"_id": 0, "owner": 0, "content_seg": 0}).skip((page - 1) * result_per_page).limit(result_per_page))
+            
             print(results)
         except PyMongoError as e:
+            print("{}".format(str(e)))
             return 528, "{}".format(str(e)), []
         except BaseException as e:
+            print("{}".format(str(e)))
             return 530, "{}".format(str(e)), []
         return 200, "ok", results

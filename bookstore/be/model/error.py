@@ -10,7 +10,7 @@ error_code = {
     518: "invalid order id {}",
     519: "not sufficient funds, order id {}",
     520: "illegal order state, order id {} has state {}, expected {}",
-    521: "",
+    521: "empty search parameters",
     522: "",
     523: "",
     524: "",
@@ -58,6 +58,9 @@ def error_not_sufficient_funds(order_id):
 
 def error_illegal_order_state(order_id, state, expected_state):
     return 520, error_code[520].format(order_id, state, expected_state)
+
+def error_empty_search_parameters():
+    return 521, error_code[521]
 
 def error_authorization_fail():
     return 401, error_code[401]
