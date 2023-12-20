@@ -2,9 +2,11 @@ import jwt
 import time
 import logging
 
-import psycopg2
 from be.model import error
 from be.model import db_conn
+from be.model import store
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 # encode a json string like:
 #   {
@@ -56,21 +58,22 @@ class User(db_conn.DBConn):
 
     def register(self, user_id: str, password: str):
         try:
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
             terminal = "terminal_{}".format(str(time.time()))
             token = jwt_encode(user_id, terminal)
-            self.cur.execute(
-                "INSERT into users(user_id, password, balance, token, terminal) "
-                "VALUES (%s, %s, %s, %s, %s);",
-                (user_id, password, 0, token, terminal),
+            user = store.User(
+                user_id=user_id, password=password, token=token, terminal=terminal, balance = 0
             )
-            self.conn.commit()
-        except psycopg2.Error:
+            session.add(user)
+            session.commit()
+            session.close()
+        except SQLAlchemyError as e:
             return error.error_exist_user_id(user_id)
         return 200, "ok"
 
-    def check_token(self, user_id: str, token: str) -> (int, str):
-        self.cur.execute("SELECT token from users where user_id=%s", (user_id,))
-        row = self.cur.fetchone()
+    def check_token(self, session, user_id: str, token: str) -> (int, str):
+        row = session.query(store.User.token).filter_by(user_id=user_id).first()
         if row is None:
             return error.error_authorization_fail()
         db_token = row[0]
@@ -79,14 +82,15 @@ class User(db_conn.DBConn):
         return 200, "ok"
 
     def check_password(self, user_id: str, password: str) -> (int, str):
-        self.cur.execute("SELECT password from users where user_id=%s", (user_id,))
-        row = self.cur.fetchone()
+        Session = sessionmaker(bind=self.engine)
+        session = Session()
+        row = session.query(store.User.password).filter_by(user_id=user_id).first()
         if row is None:
             return error.error_authorization_fail()
 
         if password != row[0]:
             return error.error_authorization_fail()
-
+        session.close()
         return 200, "ok"
 
     def login(self, user_id: str, password: str, terminal: str) -> (int, str, str):
@@ -95,42 +99,48 @@ class User(db_conn.DBConn):
             code, message = self.check_password(user_id, password)
             if code != 200:
                 return code, message, ""
-
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
             token = jwt_encode(user_id, terminal)
-            self.cur.execute(
-                "UPDATE users set token= %s , terminal = %s where user_id = %s",
-                (token, terminal, user_id),
-            )
-            if self.cur.rowcount == 0:
-                self.conn.rollback()
+            user_to_update = session.query(store.User).filter_by(user_id=user_id).first()
+            if user_to_update:
+                user_to_update.token = token
+                user_to_update.terminal = terminal
+                session.commit()
+                session.close()
+            else:
+                session.close()
                 return error.error_authorization_fail() + ("",)
-            self.conn.commit()
-        except psycopg2.Error as e:
+        except SQLAlchemyError as e:
             return 528, "{}".format(str(e)), ""
         except BaseException as e:
+            print(e)
             return 530, "{}".format(str(e)), ""
         return 200, "ok", token
 
     def logout(self, user_id: str, token: str) -> bool:
         try:
-            code, message = self.check_token(user_id, token)
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
+            code, message = self.check_token(session, user_id, token)
             if code != 200:
                 return code, message
-
             terminal = "terminal_{}".format(str(time.time()))
             dummy_token = jwt_encode(user_id, terminal)
-            self.cur.execute(
-                "UPDATE users SET token = %s, terminal = %s WHERE user_id=%s",
-                (dummy_token, terminal, user_id),
-            )
-            if self.cur.rowcount == 0:
-                self.conn.rollback()
-                return error.error_authorization_fail()
-
-            self.conn.commit()
-        except psycopg2.Error as e:
+            user_to_update = session.query(store.User).filter_by(user_id=user_id).first()
+            if user_to_update:
+                user_to_update.token = dummy_token
+                user_to_update.terminal = terminal
+                session.commit()
+                session.close()
+            else:
+                session.close()
+                return error.error_authorization_fail() + ("",)
+            
+        except SQLAlchemyError as e:
             return 528, "{}".format(str(e))
         except BaseException as e:
+            print(e)
             return 530, "{}".format(str(e))
         return 200, "ok"
 
@@ -139,13 +149,20 @@ class User(db_conn.DBConn):
             code, message = self.check_password(user_id, password)
             if code != 200:
                 return code, message
-            self.cur.execute("DELETE from users where user_id= %s", (user_id,))
-            if self.cur.rowcount == 1:
-                self.conn.commit()
+            
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
+            user_to_unreg = session.query(store.User).filter_by(user_id=user_id).all()
+
+            if len(user_to_unreg) == 1:
+                session.delete(user_to_unreg[0])
+                session.commit()
+                session.close()
             else:
-                self.conn.rollback()
+                # self.conn.rollback()
+                session.close()
                 return error.error_authorization_fail()
-        except psycopg2.Error as e:
+        except SQLAlchemyError as e:
             return 528, "{}".format(str(e))
         except BaseException as e:
             return 530, "{}".format(str(e))
@@ -158,19 +175,23 @@ class User(db_conn.DBConn):
             code, message = self.check_password(user_id, old_password)
             if code != 200:
                 return code, message
-
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
+            user_to_pwd = session.query(store.User).filter_by(user_id=user_id).all()
             terminal = "terminal_{}".format(str(time.time()))
             token = jwt_encode(user_id, terminal)
-            self.cur.execute(
-                "UPDATE users set password = %s, token= %s , terminal = %s where user_id = %s",
-                (new_password, token, terminal, user_id),
-            )
-            if self.cur.rowcount == 0:
-                self.conn.rollback()
-                return error.error_authorization_fail()
+            
+            if len(user_to_pwd) == 1:
+                user_to_pwd[0].password = new_password
+                user_to_pwd[0].token = token
+                user_to_pwd[0].terminal = terminal
+                session.commit()
+                session.close()
 
-            self.conn.commit()
-        except psycopg2.Error as e:
+            else:
+                session.close()
+                return error.error_authorization_fail()
+        except SQLAlchemyError as e:
             return 528, "{}".format(str(e))
         except BaseException as e:
             return 530, "{}".format(str(e))

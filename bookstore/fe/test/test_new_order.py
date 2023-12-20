@@ -53,6 +53,7 @@ class TestNewOrder:
         ok, buy_book_id_list = self.gen_book.gen(
             non_exist_book_id=False, low_stock_level=False
         )
+        print(ok)
         assert ok
         code, _ = self.buyer.new_order(self.store_id + "_x", buy_book_id_list)
         assert code != 200

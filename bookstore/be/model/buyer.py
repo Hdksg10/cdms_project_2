@@ -3,6 +3,9 @@ import uuid
 import logging
 from be.model import db_conn
 from be.model import error
+from be.model import store
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timedelta
 
 class Buyer(db_conn.DBConn):
@@ -21,47 +24,39 @@ class Buyer(db_conn.DBConn):
             uid = "{}_{}_{}".format(user_id, store_id, str(uuid.uuid1()))
             time_stamp = datetime.now()
             total_price = 0
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
 
-            # self.conn.commit()
             for book_id, count in id_and_count:
-                self.cur.execute(
-                    "SELECT book_id, stock_level, price FROM stores_stocks "
-                    "WHERE store_id = %s AND book_id = %s;",
-                    (store_id, book_id),
-                )
-                row = self.cur.fetchone()
-                if row is None:
+                stock = session.query(store.StoreStock).filter_by(store_id=store_id, book_id=book_id).first()
+                if not stock:
                     return error.error_non_exist_book_id(book_id) + (order_id,)
 
-                stock_level = row[1]
-                price = row[2]
-                total_price += price * count
-                if stock_level < count:
+                if stock.stock_level < count:
                     return error.error_stock_level_low(book_id) + (order_id,)
 
-                self.cur.execute(
-                    "UPDATE stores_stocks set stock_level = stock_level - %s "
-                    "WHERE store_id = %s and book_id = %s and stock_level >= %s; ",
-                    (count, store_id, book_id, count),
+                stock.stock_level -= count
+                total_price += stock.price * count
+                order_detail = store.OrderDetail(
+                    order_id=uid,
+                    book_id=book_id,
+                    amount=count,
+                    price=stock.price
                 )
-                if self.cur.rowcount == 0:
-                    return error.error_stock_level_low(book_id) + (order_id,)
-
-                self.cur.execute(
-                    "INSERT INTO orders_details(order_id, book_id, amount, price) "
-                    "VALUES(%s, %s, %s, %s);",
-                    (uid, book_id, count, price),
-                )
-            self.cur.execute(
-                "INSERT INTO orders(order_id, user_id, store_id, order_time, state, total_price) "
-                "VALUES(%s, %s, %s, %s, %s, %s);",
-                (uid, user_id, store_id, time_stamp, "Pending", total_price),
+                session.add(order_detail)
+            new_order = store.Order(
+                order_id=uid,
+                user_id=user_id,
+                store_id=store_id,
+                order_time=time_stamp,
+                state="Pending",
+                total_price=total_price
             )
-            self.conn.commit()
+            session.add(new_order)
+            session.commit()
+            session.close()
             order_id = uid
-        except psycopg2.Error as e:
-            print(str(e))
-            self.conn.rollback()
+        except SQLAlchemyError as e:
             logging.info("528, {}".format(str(e)))
             return 528, "{}".format(str(e)), ""
         except BaseException as e:
@@ -72,132 +67,71 @@ class Buyer(db_conn.DBConn):
 
     def payment(self, user_id: str, password: str, order_id: str) -> (int, str):
         try:
-            self.cur.execute(
-                "SELECT order_id, user_id, store_id, state, total_price FROM orders WHERE order_id = %s",
-                (order_id,),
-            )
-            row = self.cur.fetchone()
-            if row is None:
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
+            order = session.query(store.Order).filter_by(order_id=order_id).first()
+            
+            if not order:
                 return error.error_invalid_order_id(order_id)
 
-            order_id = row[0]
-            buyer_id = row[1]
-            store_id = row[2]
-            state = row[3]
-            total_price = row[4]
-            if buyer_id != user_id:
+            if order.user_id != user_id:
                 return error.error_authorization_fail()
 
-            if state != "Pending":
-                return error.error_illegal_order_state(order_id, state, "Pending")
+            if order.state != "Pending":
+                return error.error_illegal_order_state(order_id, order.state, "Pending")
             
-            self.cur.execute(
-                "SELECT balance, password FROM users WHERE user_id = %s;", (buyer_id,)
-            )
-            row = self.cur.fetchone()
-            if row is None:
-                return error.error_non_exist_user_id(buyer_id)
-            balance = row[0]
-            if password != row[1]:
+            buyer_id = order.user_id
+            assert buyer_id == user_id
+            
+            buyer = session.query(store.User).filter_by(user_id=user_id).first()
+            if not buyer:
+                return error.error_non_exist_user_id(user_id)
+
+            if password != buyer.password:
                 return error.error_authorization_fail()
 
-            self.cur.execute(
-                "SELECT store_id, user_id FROM stores WHERE store_id = %s;",
-                (store_id,),
-            )
-            row = self.cur.fetchone()
-            if row is None:
-                return error.error_non_exist_store_id(store_id)
+            seller = session.query(store.User).join(store.Store).filter(store.Store.store_id == order.store_id).first()
+            if not seller:
+                return error.error_non_exist_store_id(order.store_id)
 
-            seller_id = row[1]
+            if not self.user_id_exist(seller.user_id):
+                return error.error_non_exist_user_id(seller.user_id)
 
-            if not self.user_id_exist(seller_id):
-                return error.error_non_exist_user_id(seller_id)
-
-            # self.cur.execute(
-            #     "SELECT book_id, amount, price FROM orders_details WHERE order_id = %s;",
-            #     (order_id,),
-            # )
-            # rows = self.cur.fetchall()
-            # total_price = 0
-            # for row in rows:
-            #     count = row[1]
-            #     price = row[2]
-            #     total_price = total_price + price * count
-
-            if balance < total_price:
+            if buyer.balance < order.total_price:
                 return error.error_not_sufficient_funds(order_id)
 
-            self.cur.execute(
-                "UPDATE users set balance = balance - %s "
-                "WHERE user_id = %s AND balance >= %s",
-                (total_price, buyer_id, total_price),
-            )
-            if self.cur.rowcount == 0:
-                return error.error_not_sufficient_funds(order_id)
+            buyer.balance -= order.total_price
+            seller.balance += order.total_price
+            order.state = 'ToShip'
+            session.commit()
+            session.close()
 
-            self.cur.execute(
-                "UPDATE users set balance = balance + %s "
-                "WHERE user_id = %s",
-                (total_price, seller_id),
-            )
-
-            if self.cur.rowcount == 0:
-                return error.error_non_exist_user_id(buyer_id)
-
-            self.cur.execute(
-                "UPDATE orders set state = 'ToShip' "
-                "WHERE order_id = %s",
-                (order_id,)
-            )
-            assert self.cur.rowcount == 1
-            # self.cur.execute(
-            #     "DELETE FROM orders WHERE order_id = %s", (order_id,)
-            # )
-            # if self.cur.rowcount == 0:
-            #     return error.error_invalid_order_id(order_id)
-
-            # self.cur.execute(
-            #     "DELETE FROM orders_details where order_id = %s", (order_id,)
-            # )
-            # if self.cur.rowcount == 0:
-            #     return error.error_invalid_order_id(order_id)
-
-            self.conn.commit()
-
-        except psycopg2.Error as e:
-            print("{}".format(str(e)))
+        except SQLAlchemyError as e:
             return 528, "{}".format(str(e))
 
         except BaseException as e:
-            print("{}".format(str(e)))
             return 530, "{}".format(str(e))
 
         return 200, "ok"
 
     def add_funds(self, user_id, password, add_value) -> (int, str):
         try:
-            self.cur.execute(
-                "SELECT password from users where user_id=%s", (user_id,)
-            )
-            row = self.cur.fetchone()
-            if row is None:
-                return error.error_authorization_fail()
-
-            if row[0] != password:
-                return error.error_authorization_fail()
-
-            self.cur.execute(
-                "UPDATE users SET balance = balance + %s "
-                "WHERE user_id = %s",
-                (add_value, user_id),
-            )
-            if self.cur.rowcount == 0:
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
+            
+            user_to_add = session.query(store.User).filter_by(user_id=user_id).first()
+            if user_to_add:
+                if user_to_add.password != password:
+                    session.close()
+                    return error.error_authorization_fail()
+                user_to_add.balance += add_value
+            else:
+                session.close()
                 return error.error_non_exist_user_id(user_id)
 
-            self.conn.commit()
-        except psycopg2.Error as e:
-            print("{}".format(str(e)))
+            session.commit()
+            session.close()
+        except SQLAlchemyError as e:
             return 528, "{}".format(str(e))
         except BaseException as e:
             return 530, "{}".format(str(e))
@@ -205,39 +139,27 @@ class Buyer(db_conn.DBConn):
         return 200, "ok"
     
     # move specified order info to old_orders and set state to "Cancelled" or "Received"
-    def archive_order(self, order_id, state) -> None:
+    def archive_order(self, session, order_id, state) -> None:
         try:
             assert state in ["Cancelled", "Received"]
-            # order_collection = self.db["order"]
-            # order_archive_collection = self.db["order_archive"]
             
-            # order_info = order_collection.find_one({"oid": oid})
-            # if order_info is None:
-            #     raise PyMongoError(f"No order found with oid: {oid}")
-            
-            # archived_order = order_info.copy()
-            # archived_order["state"] = state
-            
-            # order_archive_collection.insert_one(archived_order)
-            
-            # order_collection.delete_one({"oid": oid})
-            
-            # Insert into old_orders
-            self.cur.execute(
-                "INSERT INTO old_orders(order_id, user_id, store_id, order_time, state, total_price) "
-                "SELECT order_id, user_id, store_id, order_time, '%s' , total_price"
-                "FROM orders "
-                "WHERE order_id = %s",
-                (state, order_id)
-            )
-            # Delete orders
-            self.cur.execute(
-                "DELETE FROM olders"
-                "WHERE order_id = %s",
-                (order_id,)
-            )
-            self.conn.commit()
-        except psycopg2.Error as e:
+            order_to_archive = session.query(store.Order).filter_by(order_id=order_id).first()
+            if order_to_archive:
+                # init instance
+                old_order = store.OldOrder(
+                    order_id=order_to_archive.order_id,
+                    user_id=order_to_archive.user_id,
+                    store_id=order_to_archive.store_id,
+                    order_time=order_to_archive.order_time,
+                    state=state,
+                    total_price=order_to_archive.total_price
+                )
+
+                # insert and delete
+                session.add(old_order)
+                session.delete(order_to_archive)
+
+        except SQLAlchemyError as e:
             logging.info("528, {}".format(str(e)))
             return
         except BaseException as e:
@@ -253,36 +175,32 @@ class Buyer(db_conn.DBConn):
 
         """
         try:          
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
             # Check if the order exists
-            self.cur.execute(
-                "SELECT order_id, user_id, state FROM orders WHERE order_id = %s",
-                (order_id,),
-            )
-            row = self.cur.fetchone()
-            if row is None:
+            order = session.query(store.Order).filter_by(order_id=order_id).first()
+            if not order:
                 return error.error_invalid_order_id(order_id)
-            order_id = row[0]
-            buyer_id = row[1]
-            state = row[2]
-            
-            if buyer_id != user_id:
-                return error.error_authorization_fail()
-            
-            if state != "Shipped":
-                return error.error_illegal_order_state(order_id, state, "Shipped")
-            
-            self.cur.execute(
-                "SELECT password FROM users WHERE user_id = %s;", (buyer_id,)
-            )
-            row = self.cur.fetchone()
-            if row is None:
-                return error.error_non_exist_user_id(buyer_id)
-            if password != row[0]:
-                return error.error_authorization_fail()
-            
-            self.archive_order(order_id, "Received")
 
-        except psycopg2.errors as e:
+            if order.user_id != user_id:
+                return error.error_authorization_fail()
+
+            if order.state != "Shipped":
+                return error.error_illegal_order_state(order_id, order.state, "Shipped")
+
+            # Check user info
+            buyer = session.query(store.User).filter_by(user_id=user_id).first()
+            if not buyer:
+                return error.error_non_exist_user_id(user_id)
+
+            if password != buyer.password:
+                return error.error_authorization_fail()
+            
+            self.archive_order(session, order_id, "Received")
+            session.commit()
+            session.close()
+
+        except SQLAlchemyError as e:
             logging.info("528, {}".format(str(e)))
             return 528, "{}".format(str(e))
         except BaseException as e:
@@ -299,19 +217,17 @@ class Buyer(db_conn.DBConn):
 
         """
         try:          
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
             # Check if the order exists
-            self.cur.execute(
-                "SELECT order_id, user_id, store_id, state, total_price FROM orders WHERE order_id = %s",
-                (order_id,),
-            )
-            row = self.cur.fetchone()
-            if row is None:
+            order = session.query(store.Order).filter_by(order_id=order_id).first()
+            if not order:
                 return error.error_invalid_order_id(order_id)
-            order_id = row[0]
-            buyer_id = row[1]
-            store_id = row[2]
-            state = row[3]
-            total_price = row[4]
+            order_id = order.order_id
+            buyer_id = order.user_id
+            store_id = order.store_id
+            state = order.state
+            total_price = order.total_price
             
             if buyer_id != user_id:
                 return error.error_authorization_fail()
@@ -321,45 +237,27 @@ class Buyer(db_conn.DBConn):
             if state == "Canceled":
                 return error.error_illegal_order_state(order_id, state, "Not Canceled")
             
-            self.cur.execute(
-                "SELECT password FROM users WHERE user_id = %s;", (buyer_id,)
-            )
-            row = self.cur.fetchone()
-            if row is None:
-                return error.error_non_exist_user_id(buyer_id)
-            if password != row[0]:
+            # Check pwd
+            buyer = session.query(store.User).filter_by(user_id=user_id).first()
+            if not buyer:
+                return error.error_non_exist_user_id(user_id) 
+            if buyer.password != password:
                 return error.error_authorization_fail()
             
             if state != "Pending":
                 # Refund balance
-                self.cur.execute(
-                "SELECT store_id, user_id FROM stores WHERE store_id = %s;",
-                (store_id,),
-                )
-                row = self.cur.fetchone()
-                if row is None:
-                    return error.error_non_exist_store_id(store_id)
+                seller = session.query(store.User).join(store.Store).filter(store.Store.store_id == store_id).first()
+                if not seller:
+                    return error.error_non_exist_store_id(order.store_id)
 
-                seller_id = row[1]
-
-                if not self.user_id_exist(seller_id):
-                    return error.error_non_exist_user_id(seller_id)
-
-                self.cur.execute(
-                    "UPDATE users set balance = balance + %s "
-                    "WHERE user_id = %s ",
-                    (total_price, buyer_id),
-                )
-
-                self.cur.execute(
-                    "UPDATE users set balance = balance - %s "
-                    "WHERE user_id = %s ",
-                    (total_price, seller_id),
-                )
+                buyer.balance += total_price
+                seller.balance -= total_price
             
-            self.archive_order(order_id, "Canceled")
+            self.archive_order(session, order_id, "Canceled")
+            session.commit()
+            session.close()
 
-        except psycopg2.errors as e:
+        except SQLAlchemyError as e:
             logging.info("528, {}".format(str(e)))
             return 528, "{}".format(str(e))
         except BaseException as e:
@@ -373,37 +271,28 @@ class Buyer(db_conn.DBConn):
         """
         try:
             result = []
-
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
             
-            self.cur.execute(
-                "SELECT password FROM users WHERE user_id = %s;", (user_id,)
-            )
-            if self.cur.rowcount == 0:
+            user = session.query(store.User).filter_by(user_id=user_id).first()
+            if not user:
                 return *error.error_non_exist_user_id(user_id), []
-            row = self.cur.fetchone()
-            if password != row[0]:
+            if password != user.password:
                 return *error.error_authorization_fail(), []
             
-            self.cur.execute(
-                "SELECT order_id, user_id, store_id, order_time, state, total_price FROM orders "
-                "WHERE user_id = %s ",
-                (user_id,)
-            )
-            orders = self.cur.fetchall()
             current_time = datetime.now()
-
+            orders = session.query(store.Order).filter_by(user_id=user_id).all()
             # Check all orders in order collection where uid = user_id
-            orders = orders
-            for row in orders:
+            for order in orders:
                 # Check for TLE
-                order_id = row[0]
-                user_id = row[1]
-                store_id = row[2]
-                order_time = row[3]
-                state = row[4]
-                total_price = row[5]
+                order_id = order.order_id
+                user_id = order.user_id
+                store_id = order.store_id
+                order_time = order.order_time
+                state = order.state
+                total_price = order.total_price
                 if current_time - order_time > timedelta(seconds=tle):
-                    self.archive_order(order_id, "Cancelled")  # Cancel the order if timeout
+                    self.archive_order(session, order_id, "Cancelled")  # Cancel the order if timeout
                     continue  # Do not add TLE orders to the result
                 # print("###########ORDER INFO############: ", order)
                 output = {
@@ -417,20 +306,15 @@ class Buyer(db_conn.DBConn):
                 result.append(output)  # Append non-TLE orders to result
 
             # Check all orders in order_archive collection where uid = user_id
-            self.cur.execute(
-                "SELECT order_id, user_id, store_id, order_time, state, total_price FROM old_orders "
-                "WHERE user_id = %s ",
-                (user_id,)
-            )
-            old_orders = self.cur.fetchall()
-            for row in old_orders:
+            old_orders = session.query(store.OldOrder).filter_by(user_id=user_id).all()
+            for order in old_orders:
                 # print("###########ORDER INFO############: ", archived_order)
-                order_id = row[0]
-                user_id = row[1]
-                store_id = row[2]
-                order_time = row[3]
-                state = row[4]
-                total_price = row[5]
+                order_id = order.order_id
+                user_id = order.user_id
+                store_id = order.store_id
+                order_time = order.order_time
+                state = order.state
+                total_price = order.total_price
                 output = {
                     "oid": order_id,
                     "uid": user_id,
@@ -440,8 +324,9 @@ class Buyer(db_conn.DBConn):
                     "time": order_time,
                 }
                 result.append(output)  # Append all archived orders to result            
-
-        except psycopg2.errors as e:
+            session.commit()
+            session.close()
+        except SQLAlchemyError as e:
             logging.info("528, {}".format(str(e)))
             return 528, "{}".format(str(e)), []
         except BaseException as e:
