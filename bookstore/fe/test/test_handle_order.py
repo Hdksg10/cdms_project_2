@@ -44,6 +44,19 @@ class TestHandleOrder:
         )
         assert code != 200
 
-    def test_ok(self):
+    def test_ok_and_error_state(self):
         code = self.gen_book.seller.handle_order(self.gen_book.user_id, self.store_id, self.order_id)
         assert code == 200
+        # test we change the state correctly
+        code, orders = self.buyer.list_orders()
+        count = 0
+        for order in orders:
+            if order['oid'] == self.order_id:
+                assert order['state'] == "Received"
+                count = 1
+                break
+        assert count != 0
+        # test illegal state
+        code = self.gen_book.seller.handle_order(self.gen_book.user_id, self.store_id, self.order_id)
+        assert code == 520
+    

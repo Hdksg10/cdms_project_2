@@ -26,23 +26,37 @@ class TestConfirm:
         assert code == 200
         code = self.seller.handle_order(self.seller_id,self.store_id,self.order_id)
         assert code == 200
+        status_code, self.err_order_id = self.buyer.new_order(self.store_id, buy_book_list)
+        assert status_code == 200
         yield
 
     def test_ok(self):
         code = self.buyer.confirm(self.order_id)
         assert code == 200
-
+        code, orders = self.buyer.list_orders()
+        assert code == 200
+        count = 0
+        for order in orders:
+            if order['oid'] == self.order_id:
+                assert order['state'] == "Received"
+                count = 1
+                break
+        assert count != 0
     def test_error_user_id(self):
         self.buyer.user_id = self.buyer.user_id + "_x"
         code = self.buyer.confirm(self.order_id)
-        assert code != 200
+        assert code == 511
 
     def test_error_password(self):
         self.buyer.password = self.buyer.password + "_x"
         code = self.buyer.confirm(self.order_id)
-        assert code != 200
+        assert code == 401
 
     def test_error_order_id(self):
         self.order_id = self.order_id + "_x"
         code = self.buyer.confirm(self.order_id)
-        assert code != 200
+        assert code == 518
+    
+    def test_error_order_state(self):
+        code = self.buyer.confirm(self.err_order_id)
+        assert code == 520

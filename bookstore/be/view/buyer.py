@@ -69,3 +69,12 @@ def cancel():
     code, message = b.cancel(user_id, password, order_id)
     return jsonify({"message": message}), code
     pass
+
+@bp_buyer.route("/funds", methods=["POST"])
+def funds():
+    user_id = request.json.get("user_id")
+    password = request.json.get("password")
+    b = Buyer()
+    code, message, funds = b.funds(user_id, password)
+    return jsonify({"message": message, "funds": funds}), code
+    pass

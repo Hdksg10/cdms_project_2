@@ -138,6 +138,27 @@ class Buyer(db_conn.DBConn):
 
         return 200, "ok"
     
+    def funds(self, user_id, password) -> (int, str, int):
+        try:
+            Session = sessionmaker(bind=self.engine)
+            session = Session()
+            
+            user = session.query(store.User).filter_by(user_id=user_id).first()
+            if user:
+                if user.password != password:
+                    session.close()
+                    return error.error_authorization_fail() + (0,)
+                session.close()
+                return 200, "ok", user.balance
+            else:
+                session.close()
+                return error.error_non_exist_user_id(user_id) + (0,)
+        except SQLAlchemyError as e:
+            return 528, "{}".format(str(e)) + (0,)
+        except BaseException as e:
+            return 530, "{}".format(str(e)) + (0,)
+    
+    
     # move specified order info to old_orders and set state to "Cancelled" or "Received"
     def archive_order(self, session, order_id, state) -> None:
         try:
@@ -183,7 +204,7 @@ class Buyer(db_conn.DBConn):
                 return error.error_invalid_order_id(order_id)
 
             if order.user_id != user_id:
-                return error.error_authorization_fail()
+                return error.error_non_exist_user_id(user_id)
 
             if order.state != "Shipped":
                 return error.error_illegal_order_state(order_id, order.state, "Shipped")
@@ -230,13 +251,12 @@ class Buyer(db_conn.DBConn):
             total_price = order.total_price
             
             if buyer_id != user_id:
-                return error.error_authorization_fail()
+                return error.error_non_exist_user_id(user_id)
             
             if state == "Received":
                 return error.error_illegal_order_state(order_id, state, "Not Received")
             if state == "Canceled":
-                return error.error_illegal_order_state(order_id, state, "Not Canceled")
-            
+                return error.error_illegal_order_state(order_id, state, "Not Cancelled")
             # Check pwd
             buyer = session.query(store.User).filter_by(user_id=user_id).first()
             if not buyer:
@@ -253,7 +273,7 @@ class Buyer(db_conn.DBConn):
                 buyer.balance += total_price
                 seller.balance -= total_price
             
-            self.archive_order(session, order_id, "Canceled")
+            self.archive_order(session, order_id, "Cancelled")
             session.commit()
             session.close()
 

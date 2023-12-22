@@ -60,7 +60,7 @@ class TestPayment:
         code = self.buyer.add_funds(self.total_price - 1)
         assert code == 200
         code = self.buyer.payment(self.order_id)
-        assert code != 200
+        assert code == 519
 
     def test_repeat_pay(self):
         code = self.buyer.add_funds(self.total_price)
