@@ -31,12 +31,6 @@ class Seller(db_conn.DBConn):
             content_words = jieba.lcut_for_search(content)
             content_segmented = " ".join(content_words)
             price = book_json.get('price', -1)
-            # self.cur.execute(
-            #     "INSERT into stores_stocks(store_id, book_id, price, stock_level)"
-            #     "VALUES (%s, %s, %s, %s)",
-            #     (store_id, book_id, price, stock_level),
-            # )
-            # self.conn.commit()
             Session = sessionmaker(bind=self.engine)
             session = Session()
             book = store.StoreStock(

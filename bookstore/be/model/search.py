@@ -32,7 +32,6 @@ class Search(db_conn.DBConn):
             query = {"$and": condition_list}
             results = list(book_collection.find(query, {"_id": 0, "owner": 0, "content_seg": 0}).skip((page - 1) * result_per_page).limit(result_per_page))
             
-            print(results)
         except PyMongoError as e:
             print("{}".format(str(e)))
             return 528, "{}".format(str(e)), []

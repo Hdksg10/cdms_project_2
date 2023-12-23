@@ -74,15 +74,12 @@ class Buyer(db_conn.DBConn):
             if not order:
                 return error.error_invalid_order_id(order_id)
 
-            if order.user_id != user_id:
-                return error.error_authorization_fail()
-
             if order.state != "Pending":
                 return error.error_illegal_order_state(order_id, order.state, "Pending")
             
-            buyer_id = order.user_id
-            assert buyer_id == user_id
-            
+            if user_id != order.user_id:
+                return error.error_non_exist_user_id(user_id)
+            user_id = order.user_id
             buyer = session.query(store.User).filter_by(user_id=user_id).first()
 
             if password != buyer.password:
@@ -234,6 +231,9 @@ class Buyer(db_conn.DBConn):
             # Check if the order exists
             order = session.query(store.Order).filter_by(order_id=order_id).first()
             if not order:
+                old_order = session.query(store.OldOrder).filter_by(order_id=order_id).first()
+                if old_order:
+                    return error.error_illegal_order_state(order_id, old_order.state, f"Not {old_order.state}")
                 return error.error_invalid_order_id(order_id)
             order_id = order.order_id
             buyer_id = order.user_id
@@ -302,7 +302,7 @@ class Buyer(db_conn.DBConn):
                 order_time = order.order_time
                 state = order.state
                 total_price = order.total_price
-                if current_time - order_time > timedelta(seconds=tle):
+                if state == "Pending" and current_time - order_time > timedelta(seconds=tle):
                     self.archive_order(session, order_id, "Cancelled")  # Cancel the order if timeout
                     continue  # Do not add TLE orders to the result
                 # print("###########ORDER INFO############: ", order)

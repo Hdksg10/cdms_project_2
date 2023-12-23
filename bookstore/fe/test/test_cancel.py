@@ -31,7 +31,7 @@ class TestCancel:
 
         yield
 
-    def test_ok(self):
+    def test_ok_and_err_state(self):
         code = self.buyer.cancel(self.order_id)
         assert code == 200
         # check state and fund
@@ -46,6 +46,8 @@ class TestCancel:
                 count = 1
                 break
         assert count != 0
+        code = self.buyer.cancel(self.order_id)
+        assert code == 520
 
     def test_error_user_id(self):
         self.buyer.user_id = self.buyer.user_id + "_x"
