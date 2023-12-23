@@ -75,7 +75,7 @@ class User(db_conn.DBConn):
     def check_token(self, session, user_id: str, token: str) -> (int, str):
         row = session.query(store.User.token).filter_by(user_id=user_id).first()
         if row is None:
-            return error.error_authorization_fail()
+            return error.error_non_exist_user_id(user_id)
         db_token = row[0]
         if not self.__check_token(user_id, db_token, token):
             return error.error_authorization_fail()
@@ -86,7 +86,7 @@ class User(db_conn.DBConn):
         session = Session()
         row = session.query(store.User.password).filter_by(user_id=user_id).first()
         if row is None:
-            return error.error_authorization_fail()
+            return error.error_non_exist_user_id(user_id)
 
         if password != row[0]:
             return error.error_authorization_fail()
@@ -103,18 +103,13 @@ class User(db_conn.DBConn):
             session = Session()
             token = jwt_encode(user_id, terminal)
             user_to_update = session.query(store.User).filter_by(user_id=user_id).first()
-            if user_to_update:
-                user_to_update.token = token
-                user_to_update.terminal = terminal
-                session.commit()
-                session.close()
-            else:
-                session.close()
-                return error.error_authorization_fail() + ("",)
+            user_to_update.token = token
+            user_to_update.terminal = terminal
+            session.commit()
+            session.close()
         except SQLAlchemyError as e:
             return 528, "{}".format(str(e)), ""
         except BaseException as e:
-            print(e)
             return 530, "{}".format(str(e)), ""
         return 200, "ok", token
 
@@ -128,19 +123,14 @@ class User(db_conn.DBConn):
             terminal = "terminal_{}".format(str(time.time()))
             dummy_token = jwt_encode(user_id, terminal)
             user_to_update = session.query(store.User).filter_by(user_id=user_id).first()
-            if user_to_update:
-                user_to_update.token = dummy_token
-                user_to_update.terminal = terminal
-                session.commit()
-                session.close()
-            else:
-                session.close()
-                return error.error_authorization_fail() + ("",)
-            
+            user_to_update.token = dummy_token
+            user_to_update.terminal = terminal
+            session.commit()
+            session.close()
+
         except SQLAlchemyError as e:
             return 528, "{}".format(str(e))
         except BaseException as e:
-            print(e)
             return 530, "{}".format(str(e))
         return 200, "ok"
 
@@ -154,14 +144,9 @@ class User(db_conn.DBConn):
             session = Session()
             user_to_unreg = session.query(store.User).filter_by(user_id=user_id).all()
 
-            if len(user_to_unreg) == 1:
-                session.delete(user_to_unreg[0])
-                session.commit()
-                session.close()
-            else:
-                # self.conn.rollback()
-                session.close()
-                return error.error_authorization_fail()
+            session.delete(user_to_unreg[0])
+            session.commit()
+            session.close()
         except SQLAlchemyError as e:
             return 528, "{}".format(str(e))
         except BaseException as e:
@@ -181,16 +166,12 @@ class User(db_conn.DBConn):
             terminal = "terminal_{}".format(str(time.time()))
             token = jwt_encode(user_id, terminal)
             
-            if len(user_to_pwd) == 1:
-                user_to_pwd[0].password = new_password
-                user_to_pwd[0].token = token
-                user_to_pwd[0].terminal = terminal
-                session.commit()
-                session.close()
+            user_to_pwd[0].password = new_password
+            user_to_pwd[0].token = token
+            user_to_pwd[0].terminal = terminal
+            session.commit()
+            session.close()
 
-            else:
-                session.close()
-                return error.error_authorization_fail()
         except SQLAlchemyError as e:
             return 528, "{}".format(str(e))
         except BaseException as e:

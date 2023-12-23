@@ -22,7 +22,7 @@ class TestNewOrder:
         )
         assert ok
         code, _ = self.buyer.new_order(self.store_id, buy_book_id_list)
-        assert code != 200
+        assert code == 515
 
     def test_low_stock_level(self):
         ok, buy_book_id_list = self.gen_book.gen(
@@ -30,7 +30,7 @@ class TestNewOrder:
         )
         assert ok
         code, _ = self.buyer.new_order(self.store_id, buy_book_id_list)
-        assert code != 200
+        assert code == 517
 
     def test_ok(self):
         ok, buy_book_id_list = self.gen_book.gen(
@@ -47,7 +47,7 @@ class TestNewOrder:
         assert ok
         self.buyer.user_id = self.buyer.user_id + "_x"
         code, _ = self.buyer.new_order(self.store_id, buy_book_id_list)
-        assert code != 200
+        assert code == 511
 
     def test_non_exist_store_id(self):
         ok, buy_book_id_list = self.gen_book.gen(
@@ -56,4 +56,4 @@ class TestNewOrder:
         print(ok)
         assert ok
         code, _ = self.buyer.new_order(self.store_id + "_x", buy_book_id_list)
-        assert code != 200
+        assert code == 513

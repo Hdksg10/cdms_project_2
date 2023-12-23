@@ -30,14 +30,14 @@ class TestRegister:
         assert code == 200
 
         code = self.auth.unregister(self.user_id + "_x", self.password)
-        assert code != 200
+        assert code == 511
 
         code = self.auth.unregister(self.user_id, self.password + "_x")
-        assert code != 200
+        assert code == 401
 
     def test_register_error_exist_user_id(self):
         code = self.auth.register(self.user_id, self.password)
         assert code == 200
 
         code = self.auth.register(self.user_id, self.password)
-        assert code != 200
+        assert code == 512

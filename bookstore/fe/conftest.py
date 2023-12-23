@@ -3,7 +3,7 @@ import threading
 from urllib.parse import urljoin
 from be import serve
 from fe import conf
-
+from be.model.store import init_completed_event
 thread: threading.Thread = None
 
 
@@ -18,6 +18,7 @@ def pytest_configure(config):
     print("frontend begin test")
     thread = threading.Thread(target=run_backend)
     thread.start()
+    init_completed_event.wait()
 
 
 def pytest_unconfigure(config):

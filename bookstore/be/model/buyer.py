@@ -26,7 +26,15 @@ class Buyer(db_conn.DBConn):
             total_price = 0
             Session = sessionmaker(bind=self.engine)
             session = Session()
-
+            new_order = store.Order(
+                order_id=uid,
+                user_id=user_id,
+                store_id=store_id,
+                order_time=time_stamp,
+                state="Pending",
+                total_price=total_price
+            )
+            session.add(new_order)
             for book_id, count in id_and_count:
                 stock = session.query(store.StoreStock).filter_by(store_id=store_id, book_id=book_id).first()
                 if not stock:
@@ -44,19 +52,11 @@ class Buyer(db_conn.DBConn):
                     price=stock.price
                 )
                 session.add(order_detail)
-            new_order = store.Order(
-                order_id=uid,
-                user_id=user_id,
-                store_id=store_id,
-                order_time=time_stamp,
-                state="Pending",
-                total_price=total_price
-            )
-            session.add(new_order)
+            new_order.total_price = total_price
             session.commit()
             session.close()
             order_id = uid
-        except SQLAlchemyError as e:
+        except SQLAlchemyError as e: 
             logging.info("528, {}".format(str(e)))
             return 528, "{}".format(str(e)), ""
         except BaseException as e:
@@ -84,18 +84,11 @@ class Buyer(db_conn.DBConn):
             assert buyer_id == user_id
             
             buyer = session.query(store.User).filter_by(user_id=user_id).first()
-            if not buyer:
-                return error.error_non_exist_user_id(user_id)
 
             if password != buyer.password:
                 return error.error_authorization_fail()
 
             seller = session.query(store.User).join(store.Store).filter(store.Store.store_id == order.store_id).first()
-            if not seller:
-                return error.error_non_exist_store_id(order.store_id)
-
-            if not self.user_id_exist(seller.user_id):
-                return error.error_non_exist_user_id(seller.user_id)
 
             if buyer.balance < order.total_price:
                 return error.error_not_sufficient_funds(order_id)
@@ -161,31 +154,32 @@ class Buyer(db_conn.DBConn):
     
     # move specified order info to old_orders and set state to "Cancelled" or "Received"
     def archive_order(self, session, order_id, state) -> None:
-        try:
-            assert state in ["Cancelled", "Received"]
-            
-            order_to_archive = session.query(store.Order).filter_by(order_id=order_id).first()
-            if order_to_archive:
-                # init instance
-                old_order = store.OldOrder(
-                    order_id=order_to_archive.order_id,
-                    user_id=order_to_archive.user_id,
-                    store_id=order_to_archive.store_id,
-                    order_time=order_to_archive.order_time,
-                    state=state,
-                    total_price=order_to_archive.total_price
+        assert state in ["Cancelled", "Received"]
+        
+        order_to_archive = session.query(store.Order).filter_by(order_id=order_id).first()
+        if order_to_archive:
+            # init instance
+            old_order = store.OldOrder(
+                order_id=order_to_archive.order_id,
+                user_id=order_to_archive.user_id,
+                store_id=order_to_archive.store_id,
+                order_time=order_to_archive.order_time,
+                state=state,
+                total_price=order_to_archive.total_price
+            )
+            session.add(old_order)
+            details_to_archive = session.query(store.OrderDetail).filter_by(order_id=order_id).all()
+            for detail in details_to_archive:
+                old_detail = store.OldOrderDetail(
+                    order_id = detail.order_id,
+                    book_id = detail.book_id,
+                    amount = detail.amount,
+                    price = detail.price
                 )
-
-                # insert and delete
-                session.add(old_order)
-                session.delete(order_to_archive)
-
-        except SQLAlchemyError as e:
-            logging.info("528, {}".format(str(e)))
-            return
-        except BaseException as e:
-            logging.info("530, {}".format(str(e)))
-            return
+                session.add(old_detail)
+                session.delete(detail)
+            # insert and delete
+            session.delete(order_to_archive)
         return
     
     def confirm(self, user_id: str, password: str, order_id: str) -> (int, str):
@@ -211,9 +205,6 @@ class Buyer(db_conn.DBConn):
 
             # Check user info
             buyer = session.query(store.User).filter_by(user_id=user_id).first()
-            if not buyer:
-                return error.error_non_exist_user_id(user_id)
-
             if password != buyer.password:
                 return error.error_authorization_fail()
             
@@ -259,25 +250,25 @@ class Buyer(db_conn.DBConn):
                 return error.error_illegal_order_state(order_id, state, "Not Cancelled")
             # Check pwd
             buyer = session.query(store.User).filter_by(user_id=user_id).first()
-            if not buyer:
-                return error.error_non_exist_user_id(user_id) 
             if buyer.password != password:
                 return error.error_authorization_fail()
             
             if state != "Pending":
                 # Refund balance
                 seller = session.query(store.User).join(store.Store).filter(store.Store.store_id == store_id).first()
-                if not seller:
-                    return error.error_non_exist_store_id(order.store_id)
-
                 buyer.balance += total_price
                 seller.balance -= total_price
+                details = session.query(store.OrderDetail).filter_by(order_id=order_id).all()
+                for detail in details:
+                    stock_to_update = session.query(store.StoreStock).filter_by(store_id=store_id, book_id=detail.book_id).first()
+                    stock_to_update.stock_level += detail.amount
             
             self.archive_order(session, order_id, "Cancelled")
             session.commit()
             session.close()
 
         except SQLAlchemyError as e:
+            print(e)
             logging.info("528, {}".format(str(e)))
             return 528, "{}".format(str(e))
         except BaseException as e:

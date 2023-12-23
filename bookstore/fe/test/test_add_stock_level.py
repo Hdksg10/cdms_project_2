@@ -29,7 +29,7 @@ class TestAddStockLevel:
             code = self.seller.add_stock_level(
                 self.user_id + "_x", self.store_id, book_id, 10
             )
-            assert code != 200
+            assert code == 511
 
     def test_error_store_id(self):
         for b in self.books:
@@ -37,7 +37,7 @@ class TestAddStockLevel:
             code = self.seller.add_stock_level(
                 self.user_id, self.store_id + "_x", book_id, 10
             )
-            assert code != 200
+            assert code == 513
 
     def test_error_book_id(self):
         for b in self.books:
@@ -45,7 +45,7 @@ class TestAddStockLevel:
             code = self.seller.add_stock_level(
                 self.user_id, self.store_id, book_id + "_x", 10
             )
-            assert code != 200
+            assert code == 515
 
     def test_ok(self):
         for b in self.books:

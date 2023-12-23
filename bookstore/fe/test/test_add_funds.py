@@ -21,9 +21,9 @@ class TestAddFunds:
     def test_error_user_id(self):
         self.buyer.user_id = self.buyer.user_id + "_x"
         code = self.buyer.add_funds(10)
-        assert code != 200
+        assert code == 511
 
     def test_error_password(self):
         self.buyer.password = self.buyer.password + "_x"
         code = self.buyer.add_funds(10)
-        assert code != 200
+        assert code == 401

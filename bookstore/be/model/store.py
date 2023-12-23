@@ -1,10 +1,10 @@
 import logging
 import os
 from pymongo import MongoClient
-import psycopg2
 from sqlalchemy import create_engine, Column, Integer, String, ForeignKey, UniqueConstraint, TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import relationship
+import threading
 
 Base = declarative_base()
 connect_url = "mongodb://userName:daseCDMS2023@110.40.142.252:27017"
@@ -44,7 +44,7 @@ class Order(Base):
 
 class OrderDetail(Base):
     __tablename__ = 'orders_details'
-    order_id = Column(String, primary_key=True)
+    order_id = Column(String, ForeignKey('orders.order_id'), primary_key=True)
     book_id = Column(String, primary_key=True)
     amount = Column(Integer)
     price = Column(Integer)
@@ -60,6 +60,14 @@ class OldOrder(Base):
     total_price = Column(Integer)
     user = relationship('User')
     store = relationship('Store')
+
+class OldOrderDetail(Base):
+    __tablename__ = 'old_orders_details'
+    order_id = Column(String, ForeignKey('old_orders.order_id'), primary_key=True)
+    book_id = Column(String, primary_key=True)
+    amount = Column(Integer)
+    price = Column(Integer)
+    __table_args__ = (UniqueConstraint('order_id', 'book_id'),)
 
 def orm_init_tables(engine):
     Base.metadata.create_all(engine)
@@ -80,80 +88,6 @@ class StoreServer:
         self.init_tables()
 
     def init_tables(self):
-        # try:
-        #     conn = self.get_db_conn()
-        #     cur = conn.cursor()
-        #     cur.execute(
-        #         """
-        #         CREATE TABLE IF NOT EXISTS users (user_id TEXT PRIMARY KEY, password TEXT NOT NULL, balance INTEGER NOT NULL, token TEXT, terminal TEXT);
-        #         """
-        #     )
-
-        #     cur.execute(
-        #         """
-        #         CREATE TABLE IF NOT EXISTS stores(store_id TEXT PRIMARY KEY,user_id TEXT,FOREIGN KEY (user_id) REFERENCES users(user_id));
-        #         """
-        #     )
-            
-        #     cur.execute(
-        #         """
-        #         CREATE TABLE IF NOT EXISTS stores_stocks(
-        #             store_id TEXT,
-        #             book_id TEXT,
-        #             price INTEGER,
-        #             stock_level INTEGER,
-        #             FOREIGN KEY (store_id) REFERENCES stores(store_id),
-        #             CONSTRAINT store_stock UNIQUE (store_id, book_id)
-        #         );
-        #         """
-        #     )
-            
-        #     cur.execute(
-        #         """
-        #         CREATE TABLE IF NOT EXISTS orders(
-        #             order_id TEXT PRIMARY KEY,
-        #             user_id TEXT,
-        #             store_id TEXT,
-        #             order_time TIMESTAMP,
-        #             state TEXT,
-        #             total_price INTEGER,
-        #             FOREIGN KEY (user_id) REFERENCES users(user_id),
-        #             FOREIGN KEY (store_id) REFERENCES stores(store_id)
-        #         );
-        #         """
-        #     )
-            
-        #     cur.execute(
-        #         """
-        #         CREATE TABLE IF NOT EXISTS orders_details(
-        #             order_id TEXT,
-        #             book_id TEXT,
-        #             amount INTEGER,
-        #             price INTEGER,
-        #             CONSTRAINT order_detail UNIQUE (order_id, book_id)  
-        #         );
-        #         """
-        #     )
-            
-        #     cur.execute(
-        #         """
-        #         CREATE TABLE IF NOT EXISTS old_orders(
-        #             order_id TEXT PRIMARY KEY,
-        #             user_id TEXT,
-        #             store_id TEXT,
-        #             order_time TIMESTAMP,
-        #             state TEXT,
-        #             total_price INTEGER,
-        #             FOREIGN KEY (user_id) REFERENCES users(user_id),
-        #             FOREIGN KEY (store_id) REFERENCES stores(store_id)
-        #         );
-        #         """
-        #     )
-        #     conn.commit()
-
-        # except psycopg2.Error as e:
-        #     logging.error(e)
-        #     conn.rollback()
         
         orm_init_tables(self.engine)
         
@@ -185,10 +119,6 @@ class StoreServer:
                  
 
     def get_db_conn(self):
-        # conn = psycopg2.connect(host = self.host, port = self.port,
-        #                         user = self.user, password = self.pwd,
-        #                         database = self.db)
-        # conn.set_session(autocommit=False)
         return self.engine
     
     def get_mongo_conn(self)-> MongoClient:
@@ -197,7 +127,7 @@ class StoreServer:
 
 
 database_instance: StoreServer = None
-
+init_completed_event = threading.Event()
 
 def init_database(db_config):
     global database_instance

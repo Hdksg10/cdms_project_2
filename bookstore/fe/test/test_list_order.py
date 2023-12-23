@@ -41,9 +41,9 @@ class TestListOrder:
     def test_error_user_id(self):
         self.buyer.user_id = self.buyer.user_id + "_x"
         code, _ = self.buyer.list_orders()
-        assert code != 200
+        assert code == 511
 
     def test_error_password(self):
         self.buyer.password = self.buyer.password + "_x"
         code, _ = self.buyer.list_orders()
-        assert code != 200
+        assert code == 401

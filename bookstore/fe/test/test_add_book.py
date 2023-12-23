@@ -32,7 +32,7 @@ class TestAddBook:
         for b in self.books:
             # non exist store id
             code = self.seller.add_book(self.store_id + "x", 0, b)
-            assert code != 200
+            assert code == 513
 
     def test_error_exist_book_id(self):
         for b in self.books:
@@ -41,11 +41,11 @@ class TestAddBook:
         for b in self.books:
             # exist book id
             code = self.seller.add_book(self.store_id, 0, b)
-            assert code != 200
+            assert code == 516
 
     def test_error_non_exist_user_id(self):
         for b in self.books:
             # non exist user id
             self.seller.seller_id = self.seller.seller_id + "_x"
             code = self.seller.add_book(self.store_id, 0, b)
-            assert code != 200
+            assert code == 511

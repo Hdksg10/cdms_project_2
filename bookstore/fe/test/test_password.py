@@ -26,7 +26,7 @@ class TestPassword:
         code, new_token = self.auth.login(
             self.user_id, self.old_password, self.terminal
         )
-        assert code != 200
+        assert code == 401
 
         code, new_token = self.auth.login(
             self.user_id, self.new_password, self.terminal
@@ -40,20 +40,20 @@ class TestPassword:
         code = self.auth.password(
             self.user_id, self.old_password + "_x", self.new_password
         )
-        assert code != 200
+        assert code == 401
 
         code, new_token = self.auth.login(
             self.user_id, self.new_password, self.terminal
         )
-        assert code != 200
+        assert code == 401
 
     def test_error_user_id(self):
         code = self.auth.password(
             self.user_id + "_x", self.old_password, self.new_password
         )
-        assert code != 200
+        assert code == 511
 
         code, new_token = self.auth.login(
             self.user_id, self.new_password, self.terminal
         )
-        assert code != 200
+        assert code == 401

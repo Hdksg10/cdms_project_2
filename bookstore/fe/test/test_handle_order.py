@@ -52,7 +52,7 @@ class TestHandleOrder:
         count = 0
         for order in orders:
             if order['oid'] == self.order_id:
-                assert order['state'] == "Received"
+                assert order['state'] == "Shipped"
                 count = 1
                 break
         assert count != 0
